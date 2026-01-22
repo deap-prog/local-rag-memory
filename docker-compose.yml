@@ -1,0 +1,139 @@
+services:
+  # --- 1. MOTEUR IA (LiteLLM) ---
+  litellm:
+    build: ./modules/litellm
+    container_name: ia-litellm
+    restart: unless-stopped
+    # Host port is configurable via LITELLM_PORT_HOST (default 23002)
+    ports:
+      - "${LITELLM_PORT_HOST:-23003}:4000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      # API-level probe: check that the /v1/models endpoint responds 200.
+      # This ensures the LiteLLM HTTP API is ready to serve requests.
+      test: ["CMD-SHELL", "python3 - <<'PY'\nimport urllib.request,sys\ntry:\n r=urllib.request.urlopen('http://127.0.0.1:4000/v1/models', timeout=3)\n sys.exit(0 if r.getcode()==200 else 1)\nexcept Exception:\n sys.exit(1)\nPY"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+
+  # --- 2. MÉMOIRE (AnythingLLM) ---
+  anythingllm:
+    image: mintplexlabs/anythingllm
+    container_name: ia-anythingllm
+    restart: unless-stopped
+    user: "root"
+    # Host port is configurable via ANYTHING_PORT_HOST (default 23001)
+    ports:
+      - "${ANYTHING_PORT_HOST:-23001}:3001"
+    cap_add:
+      - SYS_ADMIN
+    volumes:
+      - ./data/memory:/app/server/storage
+    environment:
+      - STORAGE_DIR=/app/server/storage
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SINCE_MS=${SINCE_MS}
+      - SINCE_DAYS=${SINCE_DAYS}
+      - DISABLE_TELEMETRY=true
+    depends_on:
+      litellm:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- 3. INTERFACE GPT LIKE (Open WebUI) ---
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: ia-webui
+    restart: unless-stopped
+    # Host port is configurable via OPENWEBUI_PORT_HOST (default 23003)
+    ports:
+      - "${OPENWEBUI_PORT_HOST:-23002}:8080"
+    volumes:
+      - ./data/chat:/app/backend/data
+    environment:
+      # ✅ Correction : On utilise la variable du .env
+      - OPENAI_API_BASE_URL=${LITELLM_URL}
+      - OPENAI_API_KEY=sk-student
+      - ENABLE_RAG_WEB_SEARCH=True
+      - RAG_WEB_SEARCH_ENGINE=tavily
+      - RAG_WEB_SEARCH_ENGINE_API_KEY=${TAVILY_API_KEY}
+      - RAG_WEB_SEARCH_RESULT_COUNT=3
+    depends_on:
+      litellm:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- 4. ARCHIVISTE (Worker Python) ---
+  memory-worker:
+    build: ./modules/memory-worker
+    container_name: ia-memory-worker
+    restart: unless-stopped
+    #user: "root"
+    volumes:
+      # SOURCE : On lit les JSONs ici
+      - ./modules/memory-worker:/app:rw
+      - ./data/memory-worker/archives:/app/archives:rw
+      - ./data/memory-worker/markdowns:/app/markdowns:rw
+      - ./data/memory:/app/source_db:ro
+      - ./data/debug:/app/debug
+    environment:
+      # On injecte les HÔTES définis dans le .env
+      - ANYTHING_LLM_HOST=${ANYTHING_LLM_HOST}
+      - OLLAMA_HOST=${OLLAMA_HOST}
+      - LITELLM_URL=${LITELLM_URL}
+      - DB_PATH=/app/source_db/anythingllm.db
+      # Les autres paramètres
+      - ANYTHING_LLM_API_KEY=${ANYTHING_LLM_API_KEY}
+      - WORKSPACE_SLUG=${WORKSPACE_SLUG}
+      - BASE_MODEL=${BASE_MODEL}
+      - SUMMARY_TIME=${SUMMARY_TIME}
+      - LLM_TIMEOUT=${LLM_TIMEOUT}
+      - ARCHIVE_PATH=${ARCHIVE_PATH}
+      - MD_PATH=${MD_PATH}
+    depends_on:
+      anythingllm:
+        condition: service_healthy
+      ollama-server:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- 5. CERVEAU LOCAL (Ollama) ---
+  ollama-server:
+    image: ollama/ollama:latest
+    container_name: ia-ollama
+    restart: unless-stopped
+    # Host port is configurable via OLLAMA_PORT_HOST (default 23004)
+    ports:
+      - "${OLLAMA_PORT_HOST:-23004}:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    environment:
+      - OLLAMA_DEBUG=1
+      - OLLAMA_KEEP_ALIVE=20m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

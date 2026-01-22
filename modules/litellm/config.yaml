@@ -1,0 +1,44 @@
+model_list:
+  - model_name: Gemini 2.5 Pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: Gemini 2.5 Flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: Groq
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile  # Le tout dernier, très fort
+      api_key: os.environ/GROQ_API_KEY
+
+  - model_name: Groq-Fast
+    litellm_params:
+      model: groq/llama-3.1-8b-instant    # Une fusée, mais moins intelligent
+      api_key: os.environ/GROQ_API_KEY
+
+  - model_name: ollama/mistral
+    litellm_params:
+      model: ollama/mistral
+      # ATTENTION : Mets bien le nom du service Ollama défini dans ton docker-compose
+      # Si ton service s'appelle "ollama-server", mets "http://ollama-server:11434"
+      # Si ton service s'appelle "ia-ollama", mets "http://ia-ollama:11434"
+      api_base: http://ia-ollama:11434
+
+  - model_name: phi3:mini # Le nom que le worker va demander
+    litellm_params:
+      model: ollama/phi3:mini # Le nom du modèle tel que Ollama le connaît
+      api_base: http://ia-ollama:11434
+
+  - model_name: qwen2.5:3b
+    litellm_params:
+      model: ollama/qwen2.5:3b
+      api_base: http://ia-ollama:11434
+
+litellm_settings:
+  set_verbose: True
+  expose_models_endpoint: True
+  # ATTENTION : Il faut des crochets [] car callbacks attend une liste
+  callbacks: ["cleaner.redactor_instance"]

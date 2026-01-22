@@ -1,0 +1,26 @@
+# On part de l'image officielle
+FROM ghcr.io/berriai/litellm:main-latest
+
+# 1. On passe ROOT temporairement (pour avoir le droit d'installer pip)
+USER root
+
+# Copie des fichiers
+COPY config.yaml /app/config.yaml
+COPY cleaner.py /app/cleaner.py
+
+# Installation des dépendances (impossible sans être Root)
+RUN pip install bcrypt passlib
+
+# --- SÉCURITÉ & PERMISSIONS ---
+# Au lieu de faire un chmod 777 (dangereux), on donne la propriété
+# des fichiers à l'utilisateur 'litellm' (ID 1000 en général)
+RUN chown -R 1000:1000 /app
+
+# Configuration de l'environnement
+ENV PYTHONPATH="/app"
+ENV LITELLM_CONFIG_PATH="/app/config.yaml"
+
+# 2. On repasse en utilisateur LIMITÉ pour l'exécution (Sécurité maximale)
+USER 1000
+
+CMD ["--config", "/app/config.yaml", "--port", "4000", "--detailed_debug"]
